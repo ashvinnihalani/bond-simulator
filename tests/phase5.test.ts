@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { makeConfig, simulate, STATUS_CODES, TENORS, nsLoadings, type Tenor } from "../src/engine";
 
 describe("Phase 5 — on/off-the-run liquidity premium", () => {
-  const cfg = makeConfig({ run: { horizonYears: 2, recordEveryDays: 1 } });
+  // Pin the regime to calm so richness multipliers stay at 1.
+  const calm = { transition: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] as [[number, number, number], [number, number, number], [number, number, number]] };
+  const cfg = makeConfig({ run: { horizonYears: 2, recordEveryDays: 1 }, stress: calm });
   const r = simulate(cfg, 21);
   const dayIdx = r.records.dayIdx.view();
   const status = r.records.status.view();

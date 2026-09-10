@@ -23,6 +23,7 @@ import { BondRecorder, STATUS_CODES } from "./records";
 import { makeAuctionModel } from "./auction";
 import { LiquidityModule, type LiquidityHistory } from "./liquidity";
 import { BuybackModule, type BuybackHistory } from "./buyback";
+import { StressModule } from "./stress";
 
 export interface CurveHistory {
   dates: number[];
@@ -141,6 +142,7 @@ export class Simulation {
   auctionModel: AuctionModel;
   readonly liquidity: LiquidityModule;
   readonly buyback: BuybackModule;
+  readonly stress: StressModule;
   /** Per-day multipliers set by the stress module (Phase 7). */
   volMult = 1;
   capacityMult = 1;
@@ -190,6 +192,7 @@ export class Simulation {
       if (ev.settle >= this.clock.start) push(this.bySettle, ev.settle, ev);
     }
     this.seedHistory();
+    this.stress = new StressModule(this);
     this.liquidity = new LiquidityModule(this);
     this.buyback = new BuybackModule(this);
   }
@@ -281,6 +284,9 @@ export class Simulation {
     this.dayIdx = i;
     this.today = this.clock.businessDays[i];
     for (const h of this.preCurveHooks) h(this);
+
+    // 0. Stress regime
+    this.stress.daily();
 
     // 1. Curve
     this.factors.step(this.policy[i], this.volMult);
