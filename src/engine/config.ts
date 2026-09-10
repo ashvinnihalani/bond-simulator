@@ -219,8 +219,8 @@ export const DEFAULT_CONFIG: SimConfig = {
     },
     factors: {
       mean: [0.045, -0.01, -0.005],
-      speed: [0.004, 0.01, 0.015],
-      vol: [0.00045, 0.0005, 0.0009],
+      speed: [0.002, 0.006, 0.01],
+      vol: [0.00045, 0.0006, 0.0012],
       corr: [
         [1, -0.4, 0.1],
         [-0.4, 1, 0.25],
@@ -231,7 +231,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     lambda: 1.8,
     termPremium: 0.002,
     shortEndSpread: 0.0005,
-    shortEndPull: 0.25,
+    shortEndPull: 0.08,
     minRate: 0.0,
     maxRate: 0.12,
   },

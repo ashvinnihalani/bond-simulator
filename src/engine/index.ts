@@ -1,4 +1,6 @@
 export * from "./config";
 export * from "./clock";
 export * from "./rng";
+export * from "./curve";
+export * from "./policy";
 export * from "./simulate";

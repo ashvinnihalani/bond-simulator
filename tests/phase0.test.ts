@@ -19,10 +19,11 @@ describe("Phase 0 — scaffolding", () => {
     const cfg = makeConfig({ run: { horizonYears: 1 } });
     const a = simulate(cfg, 1);
     const b = simulate(cfg, 1);
-    expect(Array.from(a.policyRate)).toEqual(Array.from(b.policyRate));
+    expect(Array.from(a.curve.level)).toEqual(Array.from(b.curve.level));
+    expect(Array.from(a.curve.parYields)).toEqual(Array.from(b.curve.parYields));
     expect(a.dates).toEqual(b.dates);
     const c = simulate(cfg, 2);
-    expect(Array.from(c.policyRate)).not.toEqual(Array.from(a.policyRate));
+    expect(Array.from(c.curve.level)).not.toEqual(Array.from(a.curve.level));
   });
 
   it("named substreams are independent of each other", () => {
