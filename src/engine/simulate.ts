@@ -20,6 +20,7 @@ import {
   type Bond,
 } from "./bond";
 import { BondRecorder, STATUS_CODES } from "./records";
+import { makeAuctionModel } from "./auction";
 
 export interface CurveHistory {
   dates: number[];
@@ -100,7 +101,7 @@ export interface AuctionModel {
   }): Omit<AuctionResult, "day" | "dayIdx" | "bondId" | "tenor" | "isReopen" | "size" | "coupon">;
 }
 
-const trivialAuctionModel: AuctionModel = {
+export const trivialAuctionModel: AuctionModel = {
   run: ({ wiYield, event }) => ({
     wiYield,
     stopYield: wiYield,
@@ -133,7 +134,7 @@ export class Simulation {
   private readonly byAnnounce = new Map<DayNum, AuctionEvent[]>();
   private readonly byAuction = new Map<DayNum, AuctionEvent[]>();
   private readonly bySettle = new Map<DayNum, AuctionEvent[]>();
-  auctionModel: AuctionModel = trivialAuctionModel;
+  auctionModel: AuctionModel;
   /** Per-day multipliers set by the stress module (Phase 7). */
   volMult = 1;
   capacityMult = 1;
@@ -154,6 +155,7 @@ export class Simulation {
     this.n = this.clock.length;
     this.policy = policyPath(config.curve.policy, this.n);
     this.factors = new FactorProcess(config.curve, this.rng.stream("curve"));
+    this.auctionModel = makeAuctionModel(config.auction, this.rng.stream("auction"));
     const nk = KEY_TENORS.length;
     this.curve = {
       dates: this.clock.businessDays,
@@ -284,6 +286,7 @@ export class Simulation {
     this.processAuctions();
     this.processSettlements();
     this.processCouponsAndMaturities();
+    this.decayShocks();
     for (const h of this.postIssuanceHooks) h(this);
 
     for (const h of this.preRecordHooks) h(this);
@@ -397,6 +400,23 @@ export class Simulation {
         const chain = this.ledger.chain[b.tenor];
         const k = chain.indexOf(b.id);
         if (k >= 0) chain.splice(k, 1);
+      }
+    }
+  }
+
+  /** Transient shocks decay geometrically each business day. */
+  private decayShocks(): void {
+    const a = this.config.auction.tailShockDecay;
+    const s = this.config.buyback.spilloverDecay;
+    for (const b of this.ledger.bonds) {
+      if (b.status === "retired") continue;
+      if (b.auctionShock !== 0) {
+        b.auctionShock *= a;
+        if (Math.abs(b.auctionShock) < 1e-9) b.auctionShock = 0;
+      }
+      if (b.spilloverShock !== 0) {
+        b.spilloverShock *= s;
+        if (Math.abs(b.spilloverShock) < 1e-9) b.spilloverShock = 0;
       }
     }
   }

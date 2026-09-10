@@ -76,8 +76,14 @@ export interface IssuanceConfig {
 }
 
 export interface AuctionConfig {
-  /** Demand elasticity: % change in quantity bid per bp of yield concession. */
+  /** Demand elasticity: log change in quantity bid per bp of yield concession. */
   elasticity: number;
+  /** Log-demand sensitivity to (supplyRatioRef − supply/capacity). */
+  demandSupplySensitivity: number;
+  /** Supply-to-capacity ratio at which the expected tail is zero. */
+  supplyRatioRef: number;
+  /** Log-normal noise on demand at the WI yield (sd). */
+  demandNoise: number;
   /** Dealer balance-sheet capacity per tenor ($bn per auction) under calm conditions. */
   dealerCapacity: PerTenor<number>;
   /** Base bid-to-cover mean and sd. */
@@ -86,8 +92,12 @@ export interface AuctionConfig {
   /** Base take-down shares (dealer / indirect / direct). */
   dealerShareMean: number;
   indirectShareMean: number;
-  /** Idiosyncratic noise on the stop-out yield (bp). */
+  /** Additional execution noise on the stop-out yield (bp). */
   tailNoiseBp: number;
+  /** Log change in bid-to-cover per bp of tail. */
+  btcTailSlope: number;
+  /** Change in dealer share per bp of tail. */
+  dealerShareTailSlope: number;
   /** Fraction of the tail that passes through to the OTR spread as a shock. */
   tailPassThrough: number;
   /** Daily decay factor of the post-auction shock. */
@@ -246,12 +256,17 @@ export const DEFAULT_CONFIG: SimConfig = {
   },
   auction: {
     elasticity: 0.12,
+    demandSupplySensitivity: 0.7,
+    supplyRatioRef: 0.7,
+    demandNoise: 0.13,
     dealerCapacity: { 2: 90, 3: 80, 5: 85, 7: 60, 10: 55, 20: 25, 30: 32 },
     bidToCoverMean: 2.5,
     bidToCoverSd: 0.15,
     dealerShareMean: 0.15,
     indirectShareMean: 0.68,
-    tailNoiseBp: 1.2,
+    tailNoiseBp: 0.4,
+    btcTailSlope: 0.04,
+    dealerShareTailSlope: 0.02,
     tailPassThrough: 0.6,
     tailShockDecay: 0.7,
   },
