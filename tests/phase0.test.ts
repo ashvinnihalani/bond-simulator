@@ -16,7 +16,7 @@ import {
 
 describe("Phase 0 — scaffolding", () => {
   it("simulate(config, seed=1) twice produces identical output", () => {
-    const cfg = makeConfig({ run: { horizonYears: 1 } });
+    const cfg = makeConfig({ run: { horizonYears: 1, recordEveryDays: 0 } });
     const a = simulate(cfg, 1);
     const b = simulate(cfg, 1);
     expect(Array.from(a.curve.level)).toEqual(Array.from(b.curve.level));

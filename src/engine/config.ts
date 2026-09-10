@@ -71,7 +71,7 @@ export interface IssuanceConfig {
   couponIncrement: number;
   /** Quarterly percent change applied to auction sizes at each refunding (0 = none). */
   sizeGrowthPerRefunding: number;
-  /** Initial ledger: number of pre-existing off-the-run CUSIPs per tenor to seed. */
+  /** Years of issuance history to seed at start (30 = full ladder of outstanding CUSIPs). */
   seedHistoryYears: number;
 }
 
@@ -242,7 +242,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     settlementLagDays: 2,
     couponIncrement: 0.00125,
     sizeGrowthPerRefunding: 0,
-    seedHistoryYears: 2,
+    seedHistoryYears: 30,
   },
   auction: {
     elasticity: 0.12,

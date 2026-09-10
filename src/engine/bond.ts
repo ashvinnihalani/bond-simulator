@@ -33,6 +33,12 @@ export interface Bond {
   lastReopenDate: DayNum | null;
   /** Ascending coupon payment dates, ending with the maturity date. */
   couponDates: DayNum[];
+  /** Regular period start (coupon date minus 6 months) for each coupon date. */
+  periodStarts: DayNum[];
+  /** Cash-flow amount per 100 face at each coupon date; rebuilt when the coupon changes. */
+  cfAmounts: number[];
+  /** Coupon the cfAmounts were built for. */
+  cfCoupon: number;
   /** Transient post-auction shock on the spread (decimal), decays daily. */
   auctionShock: number;
   /** Transient buyback spillover richening (decimal, negative = rich), decays daily. */
@@ -67,7 +73,7 @@ export function couponPeriod(bond: Bond, settle: DayNum): { prev: DayNum; next: 
     return { prev: last, next: last, periodDays: 1 };
   }
   const next = dates[idx];
-  const regularPrev = addMonths(next, -6);
+  const regularPrev = bond.periodStarts[idx];
   const prev = idx === 0 ? Math.max(bond.issueDate, regularPrev) : dates[idx - 1];
   return { prev, next, periodDays: next - regularPrev };
 }
@@ -79,23 +85,37 @@ export function accruedInterest(bond: Bond, settle: DayNum): number {
   return ((bond.coupon * 100) / 2) * ((settle - prev) / periodDays);
 }
 
-/** Remaining cash flows after settlement as [yearsFromSettle, amountPer100] pairs. */
-export function cashflows(bond: Bond, settle: DayNum): Array<[number, number]> {
-  const out: Array<[number, number]> = [];
+/** Rebuild the cached cash-flow amounts if the coupon changed. */
+export function ensureCashflows(bond: Bond): number[] {
+  if (bond.cfCoupon === bond.coupon && bond.cfAmounts.length === bond.couponDates.length) return bond.cfAmounts;
   const c = (bond.coupon * 100) / 2;
   const n = bond.couponDates.length;
+  const out = new Array<number>(n);
   for (let k = 0; k < n; k++) {
     const d = bond.couponDates[k];
-    if (d <= settle) continue;
     let amt = c;
     if (k === 0) {
       // Short/long first coupon: pro-rate by accrual fraction of a regular period.
-      const regularPrev = addMonths(d, -6);
+      const regularPrev = bond.periodStarts[0];
       const frac = (d - Math.max(bond.issueDate, regularPrev)) / (d - regularPrev);
       amt = c * Math.min(frac, 1.5);
     }
     if (k === n - 1) amt += 100;
-    out.push([yearFrac(settle, d), amt]);
+    out[k] = amt;
+  }
+  bond.cfAmounts = out;
+  bond.cfCoupon = bond.coupon;
+  return out;
+}
+
+/** Remaining cash flows after settlement as [yearsFromSettle, amountPer100] pairs. */
+export function cashflows(bond: Bond, settle: DayNum): Array<[number, number]> {
+  const amts = ensureCashflows(bond);
+  const out: Array<[number, number]> = [];
+  for (let k = 0; k < amts.length; k++) {
+    const d = bond.couponDates[k];
+    if (d <= settle) continue;
+    out.push([yearFrac(settle, d), amts[k]]);
   }
   return out;
 }
@@ -104,11 +124,33 @@ export type DiscountFn = (tau: number) => number;
 
 /** Dirty price per 100 from a discount-factor function with a parallel zero-rate shift `spread`. */
 export function dirtyPriceOnCurve(bond: Bond, settle: DayNum, df: DiscountFn, spread: number): number {
+  const amts = ensureCashflows(bond);
+  const dates = bond.couponDates;
   let pv = 0;
-  for (const [t, amt] of cashflows(bond, settle)) {
-    pv += amt * df(t) * Math.exp(-spread * t);
+  for (let k = 0; k < amts.length; k++) {
+    const d = dates[k];
+    if (d <= settle) continue;
+    const t = (d - settle) / 365.25;
+    pv += amts[k] * df(t) * (spread === 0 ? 1 : Math.exp(-spread * t));
   }
   return pv;
+}
+
+/** Dirty prices at zero spread and at `spread`, sharing one pass over the discount factors. */
+export function dirtyPricePair(bond: Bond, settle: DayNum, df: DiscountFn, spread: number): [number, number] {
+  const amts = ensureCashflows(bond);
+  const dates = bond.couponDates;
+  let pv0 = 0;
+  let pvS = 0;
+  for (let k = 0; k < amts.length; k++) {
+    const d = dates[k];
+    if (d <= settle) continue;
+    const t = (d - settle) / 365.25;
+    const base = amts[k] * df(t);
+    pv0 += base;
+    pvS += base * Math.exp(-spread * t);
+  }
+  return [pv0, pvS];
 }
 
 export function cleanPriceOnCurve(bond: Bond, settle: DayNum, df: DiscountFn, spread: number): number {
@@ -122,7 +164,9 @@ export function parCouponOnCurve(bond: Bond, settle: DayNum, df: DiscountFn, spr
   const couponLeg = dirtyPriceOnCurve(bond, settle, df, spread) - 100 * dfSpread(bond, settle, df, spread);
   bond.coupon = saved;
   const principalPv = 100 * dfSpread(bond, settle, df, spread);
-  const accruedPerUnitCoupon = accruedInterest({ ...bond, coupon: 1 }, settle);
+  bond.coupon = 1;
+  const accruedPerUnitCoupon = accruedInterest(bond, settle);
+  bond.coupon = saved;
   // price(c) = c·couponLeg + principalPv = 100 + c·accruedPerUnitCoupon
   return (100 - principalPv) / (couponLeg - accruedPerUnitCoupon);
 }
@@ -137,71 +181,66 @@ export function roundCoupon(parYield: number, increment: number): number {
   return Math.max(0, Math.floor(parYield / increment + 1e-9) * increment);
 }
 
-/** Street-convention period offsets: fractional periods to each remaining cash flow. */
-function periodOffsets(bond: Bond, settle: DayNum): Array<[number, number]> {
-  const { next, prev, periodDays } = couponPeriod(bond, settle);
-  const w = (next - settle) / periodDays;
-  void prev;
-  const out: Array<[number, number]> = [];
-  const c = (bond.coupon * 100) / 2;
-  const n = bond.couponDates.length;
-  let j = 0;
-  for (let k = 0; k < n; k++) {
-    const d = bond.couponDates[k];
-    if (d <= settle) continue;
-    let amt = c;
-    if (k === 0) {
-      const regularPrev = addMonths(d, -6);
-      const frac = (d - Math.max(bond.issueDate, regularPrev)) / (d - regularPrev);
-      amt = c * Math.min(frac, 1.5);
-    }
-    if (k === n - 1) amt += 100;
-    out.push([w + j, amt]);
-    j++;
-  }
-  return out;
+/** First remaining coupon index and the fractional first period, street convention. */
+function firstPeriod(bond: Bond, settle: DayNum): { k0: number; w: number } {
+  const dates = bond.couponDates;
+  let k0 = 0;
+  while (k0 < dates.length && dates[k0] <= settle) k0++;
+  if (k0 >= dates.length) return { k0, w: 0 };
+  const next = dates[k0];
+  const periodDays = next - bond.periodStarts[k0];
+  return { k0, w: (next - settle) / periodDays };
 }
 
 /** Dirty price from a street-convention semi-annual yield. */
 export function dirtyPriceFromYield(bond: Bond, settle: DayNum, y: number): number {
-  const offs = periodOffsets(bond, settle);
+  const amts = ensureCashflows(bond);
+  const { k0, w } = firstPeriod(bond, settle);
   const v = 1 / (1 + y / 2);
+  let disc = Math.pow(v, w);
   let pv = 0;
-  for (const [p, amt] of offs) pv += amt * Math.pow(v, p);
+  for (let k = k0; k < amts.length; k++) {
+    pv += amts[k] * disc;
+    disc *= v;
+  }
   return pv;
 }
 
 /** Street-convention yield from a dirty price (Newton with bisection fallback). */
-export function yieldFromDirtyPrice(bond: Bond, settle: DayNum, dirty: number): number {
-  const offs = periodOffsets(bond, settle);
-  if (offs.length === 0) return 0;
-  const f = (y: number): number => {
+export function yieldFromDirtyPrice(bond: Bond, settle: DayNum, dirty: number, guess?: number): number {
+  const amts = ensureCashflows(bond);
+  const { k0, w } = firstPeriod(bond, settle);
+  if (k0 >= amts.length) return 0;
+  // Returns [price - dirty, dPrice/dy].
+  const eval2 = (y: number): [number, number] => {
     const v = 1 / (1 + y / 2);
+    let disc = Math.pow(v, w);
     let pv = 0;
-    for (const [p, amt] of offs) pv += amt * Math.pow(v, p);
-    return pv - dirty;
-  };
-  const df = (y: number): number => {
-    const v = 1 / (1 + y / 2);
     let d = 0;
-    for (const [p, amt] of offs) d += (-p / 2) * amt * Math.pow(v, p + 1);
-    return d;
+    let p = w;
+    for (let k = k0; k < amts.length; k++) {
+      const a = amts[k] * disc;
+      pv += a;
+      d += (-p / 2) * a * v;
+      disc *= v;
+      p += 1;
+    }
+    return [pv - dirty, d];
   };
-  let y = bond.coupon > 0 ? bond.coupon : 0.04;
+  let y = guess ?? (bond.coupon > 0 ? bond.coupon : 0.04);
   for (let it = 0; it < 50; it++) {
-    const fy = f(y);
-    const dy = df(y);
+    const [fy, dy] = eval2(y);
     if (Math.abs(dy) < 1e-14) break;
     const step = fy / dy;
     y -= step;
-    if (Math.abs(step) < 1e-14) return y;
+    if (Math.abs(step) < 1e-13) return y;
   }
-  if (Math.abs(f(y)) < 1e-9) return y;
+  if (Math.abs(eval2(y)[0]) < 1e-9) return y;
   let lo = -0.5;
   let hi = 1.0;
   for (let it = 0; it < 200; it++) {
     const mid = 0.5 * (lo + hi);
-    if (f(mid) > 0) lo = mid;
+    if (eval2(mid)[0] > 0) lo = mid;
     else hi = mid;
   }
   return 0.5 * (lo + hi);
@@ -224,20 +263,25 @@ export interface RiskMetrics {
 
 /** Full risk metrics from a street-convention yield. */
 export function riskFromYield(bond: Bond, settle: DayNum, y: number): RiskMetrics {
-  const offs = periodOffsets(bond, settle);
+  const amts = ensureCashflows(bond);
+  const { k0, w } = firstPeriod(bond, settle);
   const v = 1 / (1 + y / 2);
+  let disc = Math.pow(v, w);
   let pv = 0;
   let d1 = 0;
   let d2 = 0;
-  for (const [p, amt] of offs) {
-    const disc = amt * Math.pow(v, p);
-    pv += disc;
-    d1 += (p / 2) * disc;
-    d2 += ((p / 2) * (p / 2 + 0.5)) * disc;
+  let p = w;
+  for (let k = k0; k < amts.length; k++) {
+    const a = amts[k] * disc;
+    pv += a;
+    d1 += (p / 2) * a;
+    d2 += (p / 2) * (p / 2 + 0.5) * a;
+    disc *= v;
+    p += 1;
   }
-  const mac = d1 / pv;
+  const mac = pv > 0 ? d1 / pv : 0;
   const mod = mac / (1 + y / 2);
-  const conv = d2 / pv / Math.pow(1 + y / 2, 2);
+  const conv = pv > 0 ? d2 / pv / Math.pow(1 + y / 2, 2) : 0;
   const accrued = accruedInterest(bond, settle);
   return {
     dirtyPrice: pv,
@@ -274,6 +318,7 @@ export function makeBond(args: {
   status?: BondStatus;
   spread?: number;
 }): Bond {
+  const couponDates = couponSchedule(args.issueDate, args.maturityDate);
   return {
     id: args.id,
     tenor: args.tenor,
@@ -288,7 +333,10 @@ export function makeBond(args: {
     spread: args.spread ?? 0,
     reopenings: 0,
     lastReopenDate: null,
-    couponDates: couponSchedule(args.issueDate, args.maturityDate),
+    couponDates,
+    periodStarts: couponDates.map((d) => addMonths(d, -6)),
+    cfAmounts: [],
+    cfCoupon: -1,
     auctionShock: 0,
     spilloverShock: 0,
     noiseState: 0,

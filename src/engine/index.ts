@@ -3,5 +3,7 @@ export * from "./clock";
 export * from "./rng";
 export * from "./bond";
 export * from "./curve";
+export * from "./issuance";
+export * from "./records";
 export * from "./policy";
 export * from "./simulate";

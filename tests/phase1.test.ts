@@ -63,7 +63,7 @@ describe("Phase 1 — curve engine", () => {
 
   it("simulated curves stay within realistic bounds over 10,000+ daily paths", () => {
     // 45 seeds × 1 year ≈ 10,000 daily curves, plus one long 10-year path.
-    const cfg = makeConfig({ run: { horizonYears: 1 } });
+    const cfg = makeConfig({ run: { horizonYears: 1, recordEveryDays: 0 } });
     let days = 0;
     for (let seed = 1; seed <= 45; seed++) {
       const r = simulate(cfg, seed);
@@ -77,7 +77,7 @@ describe("Phase 1 — curve engine", () => {
       }
     }
     expect(days).toBeGreaterThan(10_000);
-    const long = simulate(makeConfig({ run: { horizonYears: 10 } }), 99);
+    const long = simulate(makeConfig({ run: { horizonYears: 10, recordEveryDays: 0 } }), 99);
     for (let i = 0; i < long.dates.length; i++) {
       const y = parYieldAt(long.curve, i, 10);
       expect(y).toBeGreaterThan(0);
@@ -86,7 +86,7 @@ describe("Phase 1 — curve engine", () => {
   });
 
   it("curve is smooth with positive forwards under normal settings", () => {
-    const r = simulate(makeConfig({ run: { horizonYears: 2 } }), 3);
+    const r = simulate(makeConfig({ run: { horizonYears: 2, recordEveryDays: 0 } }), 3);
     const cfg = r.config;
     for (let i = 0; i < r.dates.length; i += 25) {
       const c = new NsCurve(r.curve.level[i], r.curve.slope[i], r.curve.curvature[i], cfg.curve.lambda, cfg.curve.termPremium, cfg.curve.minRate, cfg.curve.maxRate);
@@ -99,7 +99,7 @@ describe("Phase 1 — curve engine", () => {
   it("2s10s spread distribution is in the historical range", () => {
     const spreads: number[] = [];
     for (let seed = 1; seed <= 30; seed++) {
-      const r = simulate(makeConfig({ run: { horizonYears: 3 } }), seed);
+      const r = simulate(makeConfig({ run: { horizonYears: 3, recordEveryDays: 0 } }), seed);
       for (let i = 0; i < r.dates.length; i += 5) {
         spreads.push((parYieldAt(r.curve, i, 10) - parYieldAt(r.curve, i, 2)) * 1e4);
       }
@@ -111,8 +111,8 @@ describe("Phase 1 — curve engine", () => {
   });
 
   it("policy hikes flatten the curve via the short-end anchor", () => {
-    const hold = simulate(makeConfig({ run: { horizonYears: 2 }, curve: { policy: { scenario: "hold" } } }), 5);
-    const hike = simulate(makeConfig({ run: { horizonYears: 2 }, curve: { policy: { scenario: "hike", numSteps: 6, stepSize: 0.0025, stepEveryDays: 42, startAfterDays: 20 } } }), 5);
+    const hold = simulate(makeConfig({ run: { horizonYears: 2, recordEveryDays: 0 }, curve: { policy: { scenario: "hold" } } }), 5);
+    const hike = simulate(makeConfig({ run: { horizonYears: 2, recordEveryDays: 0 }, curve: { policy: { scenario: "hike", numSteps: 6, stepSize: 0.0025, stepEveryDays: 42, startAfterDays: 20 } } }), 5);
     const last = hold.dates.length - 1;
     const s2Hold = parYieldAt(hold.curve, last, 2);
     const s2Hike = parYieldAt(hike.curve, last, 2);
