@@ -21,6 +21,7 @@ import {
 } from "./bond";
 import { BondRecorder, STATUS_CODES } from "./records";
 import { makeAuctionModel } from "./auction";
+import { LiquidityModule, type LiquidityHistory } from "./liquidity";
 
 export interface CurveHistory {
   dates: number[];
@@ -69,6 +70,7 @@ export interface SimResult {
   auctions: AuctionResult[];
   records: BondRecorder;
   daily: DailyAggregates;
+  liquidity: LiquidityHistory;
 }
 
 export function curveAt(h: CurveHistory, cfg: SimConfig, i: number): NsCurve {
@@ -135,6 +137,7 @@ export class Simulation {
   private readonly byAuction = new Map<DayNum, AuctionEvent[]>();
   private readonly bySettle = new Map<DayNum, AuctionEvent[]>();
   auctionModel: AuctionModel;
+  readonly liquidity: LiquidityModule;
   /** Per-day multipliers set by the stress module (Phase 7). */
   volMult = 1;
   capacityMult = 1;
@@ -184,6 +187,7 @@ export class Simulation {
       if (ev.settle >= this.clock.start) push(this.bySettle, ev.settle, ev);
     }
     this.seedHistory();
+    this.liquidity = new LiquidityModule(this);
   }
 
   /** Create bonds that exist on day 0 from the historical part of the calendar. */
@@ -259,6 +263,7 @@ export class Simulation {
       auctions: this.auctions,
       records: this.records,
       daily: this.daily,
+      liquidity: this.liquidity.history,
     };
   }
 
@@ -289,6 +294,10 @@ export class Simulation {
     this.decayShocks();
     for (const h of this.postIssuanceHooks) h(this);
 
+    // 3. Liquidity premia
+    this.liquidity.updateSpreads();
+    this.liquidity.recordOnOff();
+
     for (const h of this.preRecordHooks) h(this);
 
     // 3. Record
@@ -297,7 +306,10 @@ export class Simulation {
     this.daily.billsOutstanding[i] = this.ledger.cash.billsOutstanding;
     this.daily.regime[i] = this.regime;
     const every = this.config.run.recordEveryDays;
-    if (every > 0 && (i % every === 0 || i === this.n - 1)) this.recordDay();
+    if (every > 0 && (i % every === 0 || i === this.n - 1)) {
+      this.recordDay();
+      this.liquidity.fitOffRunCurve();
+    }
   }
 
   private processAnnouncements(): void {
@@ -468,9 +480,9 @@ export class Simulation {
     });
   }
 
-  /** Overridden by the liquidity module (Phase 5). */
-  repoSpecialness(_bond: Bond): number {
-    return 0;
+  /** OTR repo specialness in bp. */
+  repoSpecialness(bond: Bond): number {
+    return this.liquidity.specialnessBp(bond);
   }
 
   streamFor(name: string): Rng {

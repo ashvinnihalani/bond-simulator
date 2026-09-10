@@ -5,6 +5,7 @@ export * from "./auction";
 export * from "./bond";
 export * from "./curve";
 export * from "./issuance";
+export * from "./liquidity";
 export * from "./records";
 export * from "./policy";
 export * from "./simulate";

@@ -107,7 +107,7 @@ export interface AuctionConfig {
 export interface LiquidityConfig {
   /** Base on-the-run richness at issuance per tenor (bp, positive = rich). */
   baseRichnessBp: PerTenor<number>;
-  /** Half-life of richness decay (business days). */
+  /** Half-life of richness decay for quarterly tenors (business days); monthly tenors scale by 21/63. */
   halfLifeDays: number;
   /** Additional cheapness per year of age for deep off-the-runs (bp/year). */
   agingCheapnessBpPerYear: number;
@@ -272,7 +272,7 @@ export const DEFAULT_CONFIG: SimConfig = {
   },
   liquidity: {
     baseRichnessBp: { 2: 1.5, 3: 1.5, 5: 2.5, 7: 2.0, 10: 4.0, 20: 3.0, 30: 5.0 },
-    halfLifeDays: 30,
+    halfLifeDays: 35,
     agingCheapnessBpPerYear: 0.4,
     agingCheapnessCapBp: 6,
     noiseBp: 0.6,
