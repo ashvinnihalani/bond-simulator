@@ -1,6 +1,7 @@
 export * from "./config";
 export * from "./clock";
 export * from "./rng";
+export * from "./analytics";
 export * from "./auction";
 export * from "./bond";
 export * from "./buyback";

@@ -14,6 +14,7 @@ import { TENORS, type LiquidityConfig, type Tenor } from "./config";
 import type { Bond } from "./bond";
 import type { Simulation } from "./simulate";
 import { STATUS_CODES } from "./records";
+import { bucketIndex } from "./issuance";
 
 /** Business days between new issues of a tenor. */
 export function cycleDays(tenor: Tenor): number {
@@ -41,6 +42,9 @@ export interface OffRunFit {
 export interface LiquidityHistory {
   onOff: Record<Tenor, OnOffSeries>;
   offRunFit: OffRunFit;
+  /** Mean effective spread (bp) of off-the-run bonds per buyback bucket, row-major [day][bucket]. */
+  bucketCheapness: Float64Array;
+  nBuckets: number;
 }
 
 export class LiquidityModule {
@@ -57,9 +61,12 @@ export class LiquidityModule {
       otrMinusFitted: new Float64Array(n),
       specialness: new Float64Array(n),
     });
+    const nb = sim.config.buyback.buckets.length;
     this.history = {
       onOff: { 2: mk(), 3: mk(), 5: mk(), 7: mk(), 10: mk(), 20: mk(), 30: mk() },
       offRunFit: { dayIdx: [], dL: [], dS: [], dC: [], rmsBp: [] },
+      bucketCheapness: new Float64Array(n * nb),
+      nBuckets: nb,
     };
     // Initialise spreads on day 0 so seeded bonds start at their steady state.
     this.updateSpreads(true);
@@ -112,9 +119,21 @@ export class LiquidityModule {
     }
   }
 
-  /** Compute on/off deltas for each tenor from today's curve. */
+  /** Compute on/off deltas for each tenor from today's curve, and per-bucket cheapness. */
   recordOnOff(): void {
     const i = this.sim.dayIdx;
+    const buckets = this.sim.config.buyback.buckets;
+    const nb = buckets.length;
+    const sum = new Array<number>(nb).fill(0);
+    const cnt = new Array<number>(nb).fill(0);
+    for (const b of this.sim.ledger.bonds) {
+      if (b.status !== "off-run" || b.outstanding <= 0) continue;
+      const k = bucketIndex((this.sim.today - b.maturityDate) / -365.25, buckets);
+      if (k < 0) continue;
+      sum[k] += this.sim.effectiveSpread(b) * 1e4;
+      cnt[k]++;
+    }
+    for (let k = 0; k < nb; k++) this.history.bucketCheapness[i * nb + k] = cnt[k] ? sum[k] / cnt[k] : NaN;
     for (const t of TENORS) {
       const chain = this.sim.ledger.chain[t];
       const otr = chain[0] ? this.sim.ledger.get(chain[0]) : undefined;

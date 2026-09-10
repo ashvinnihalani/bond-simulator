@@ -54,6 +54,10 @@ export interface AuctionResult {
   coupon: number;
   /** Supply relative to dealer capacity. */
   supplyToCapacity: number;
+  /** Extra size added to fund buybacks ($bn). */
+  fundingSize: number;
+  /** DV01 per 100 face at the stop-out yield (as of settlement). */
+  dv01: number;
 }
 
 export interface DailyAggregates {
@@ -103,7 +107,7 @@ export interface AuctionModel {
     dayIdx: number;
     capacityMult: number;
     tailMult: number;
-  }): Omit<AuctionResult, "day" | "dayIdx" | "bondId" | "tenor" | "isReopen" | "size" | "coupon">;
+  }): Omit<AuctionResult, "day" | "dayIdx" | "bondId" | "tenor" | "isReopen" | "size" | "coupon" | "fundingSize" | "dv01">;
 }
 
 export const trivialAuctionModel: AuctionModel = {
@@ -343,7 +347,8 @@ export class Simulation {
     for (const ev of evs) {
       const bond = this.ledger.get(ev.id);
       if (!bond) continue;
-      ev.size += this.buyback.drawCouponFunding(ev.tenor);
+      const fundingSize = this.buyback.drawCouponFunding(ev.tenor);
+      ev.size += fundingSize;
       // WI yield: the bond's curve-implied yield at settlement, including its
       // current idiosyncratic spread (set by the liquidity module).
       const wiYield = this.yieldOnCurve(bond, ev.settle, this.effectiveSpread(bond));
@@ -375,6 +380,8 @@ export class Simulation {
         isReopen: ev.isReopen,
         size: ev.size,
         coupon,
+        fundingSize,
+        dv01: riskFromYield(bond, ev.settle, res.stopYield).dv01,
         ...res,
       };
       this.auctions.push(result);

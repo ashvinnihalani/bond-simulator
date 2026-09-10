@@ -11,7 +11,7 @@
 
 import { dayNumFromISO, yearFrac, yearOf, type DayNum } from "./clock";
 import { TENORS, type BuybackBucket, type BuybackConfig, type Tenor } from "./config";
-import { dirtyPriceOnCurve, type Bond } from "./bond";
+import { dirtyPriceOnCurve, riskFromYield, yieldFromDirtyPrice, type Bond } from "./bond";
 import type { Simulation } from "./simulate";
 
 export type OpKind = "liquidity" | "cash-mgmt";
@@ -29,7 +29,13 @@ export interface AcceptedOffer {
   amount: number;
   /** Offer yield spread to the fitted curve (bp, positive = cheap). */
   spreadBp: number;
+  /** Dirty price paid per 100. */
   price: number;
+  /** Dirty price on the fitted curve (zero spread) per 100. */
+  curvePrice: number;
+  /** DV01 per 100 face at the offer yield. */
+  dv01: number;
+  modDuration: number;
 }
 
 export interface BuybackOperation {
@@ -196,6 +202,7 @@ export class BuybackModule {
       amount: number;
       spreadBp: number;
       price: number;
+      curvePrice: number;
     }
     const offers: Offer[] = [];
     let eligible = 0;
@@ -216,7 +223,8 @@ export class BuybackModule {
       // Dealers ask for a better price than market: offer yield spread is lower by the markup.
       const offerSpreadBp = spreadBp - this.cfg.offerMarkupBp;
       const price = dirtyPriceOnCurve(b, sim.today, df, offerSpreadBp / 1e4);
-      offers.push({ bond: b, amount: size, spreadBp: offerSpreadBp, price });
+      const curvePrice = dirtyPriceOnCurve(b, sim.today, df, 0);
+      offers.push({ bond: b, amount: size, spreadBp: offerSpreadBp, price, curvePrice });
     }
     // Rank by cheapness (highest spread to curve first).
     offers.sort((a, b) => b.spreadBp - a.spreadBp || a.bond.id.localeCompare(b.bond.id));
@@ -238,7 +246,8 @@ export class BuybackModule {
       spreadWeighted += amt * o.spreadBp;
       const cash = (amt * o.price) / 100;
       cashPaid += cash;
-      accepts.push({ bondId: o.bond.id, amount: amt, spreadBp: o.spreadBp, price: o.price });
+      const risk = riskFromYield(o.bond, sim.today, yieldFromDirtyPrice(o.bond, sim.today, o.price));
+      accepts.push({ bondId: o.bond.id, amount: amt, spreadBp: o.spreadBp, price: o.price, curvePrice: o.curvePrice, dv01: risk.dv01, modDuration: risk.modDuration });
       // Effects on the CUSIP.
       o.bond.outstanding -= amt;
       o.bond.boughtBack += amt;
