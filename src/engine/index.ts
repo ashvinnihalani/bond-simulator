@@ -4,6 +4,7 @@ export * from "./rng";
 export * from "./analytics";
 export * from "./auction";
 export * from "./bond";
+export * from "./calibrate";
 export * from "./buyback";
 export * from "./curve";
 export * from "./issuance";

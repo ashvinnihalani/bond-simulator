@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "calibrate": "vite-node scripts/calibrate.ts --"
   },
   "dependencies": {
     "plotly.js-cartesian-dist-min": "^3.7.0",
