@@ -22,6 +22,7 @@ import {
 import { BondRecorder, STATUS_CODES } from "./records";
 import { makeAuctionModel } from "./auction";
 import { LiquidityModule, type LiquidityHistory } from "./liquidity";
+import { BuybackModule, type BuybackHistory } from "./buyback";
 
 export interface CurveHistory {
   dates: number[];
@@ -71,6 +72,7 @@ export interface SimResult {
   records: BondRecorder;
   daily: DailyAggregates;
   liquidity: LiquidityHistory;
+  buyback: BuybackHistory;
 }
 
 export function curveAt(h: CurveHistory, cfg: SimConfig, i: number): NsCurve {
@@ -138,6 +140,7 @@ export class Simulation {
   private readonly bySettle = new Map<DayNum, AuctionEvent[]>();
   auctionModel: AuctionModel;
   readonly liquidity: LiquidityModule;
+  readonly buyback: BuybackModule;
   /** Per-day multipliers set by the stress module (Phase 7). */
   volMult = 1;
   capacityMult = 1;
@@ -188,6 +191,7 @@ export class Simulation {
     }
     this.seedHistory();
     this.liquidity = new LiquidityModule(this);
+    this.buyback = new BuybackModule(this);
   }
 
   /** Create bonds that exist on day 0 from the historical part of the calendar. */
@@ -264,6 +268,7 @@ export class Simulation {
       records: this.records,
       daily: this.daily,
       liquidity: this.liquidity.history,
+      buyback: this.buyback.history,
     };
   }
 
@@ -296,6 +301,9 @@ export class Simulation {
 
     // 3. Liquidity premia
     this.liquidity.updateSpreads();
+
+    // 4. Buybacks
+    this.buyback.daily();
     this.liquidity.recordOnOff();
 
     for (const h of this.preRecordHooks) h(this);
@@ -329,6 +337,7 @@ export class Simulation {
     for (const ev of evs) {
       const bond = this.ledger.get(ev.id);
       if (!bond) continue;
+      ev.size += this.buyback.drawCouponFunding(ev.tenor);
       // WI yield: the bond's curve-implied yield at settlement, including its
       // current idiosyncratic spread (set by the liquidity module).
       const wiYield = this.yieldOnCurve(bond, ev.settle, this.effectiveSpread(bond));
@@ -420,6 +429,7 @@ export class Simulation {
   private decayShocks(): void {
     const a = this.config.auction.tailShockDecay;
     const s = this.config.buyback.spilloverDecay;
+    const c = this.config.buyback.compressionDecay;
     for (const b of this.ledger.bonds) {
       if (b.status === "retired") continue;
       if (b.auctionShock !== 0) {
@@ -430,12 +440,16 @@ export class Simulation {
         b.spilloverShock *= s;
         if (Math.abs(b.spilloverShock) < 1e-9) b.spilloverShock = 0;
       }
+      if (b.buybackAdj !== 0) {
+        b.buybackAdj *= c;
+        if (Math.abs(b.buybackAdj) < 1e-9) b.buybackAdj = 0;
+      }
     }
   }
 
   /** Total spread used for pricing: idiosyncratic + transient shocks. */
   effectiveSpread(bond: Bond): number {
-    return bond.spread + bond.auctionShock + bond.spilloverShock + bond.noiseState;
+    return bond.spread + bond.auctionShock + bond.spilloverShock + bond.noiseState + bond.buybackAdj + bond.anticipation;
   }
 
   private recordDay(): void {

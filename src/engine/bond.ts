@@ -45,6 +45,10 @@ export interface Bond {
   spilloverShock: number;
   /** AR(1) idiosyncratic noise state (decimal). */
   noiseState: number;
+  /** Persistent richening from being bought back (decimal, ≤ 0), decays slowly. */
+  buybackAdj: number;
+  /** Anticipation richening ahead of a scheduled buyback (decimal, ≤ 0). */
+  anticipation: number;
   /** Cumulative amount bought back ($bn). */
   boughtBack: number;
 }
@@ -340,6 +344,8 @@ export function makeBond(args: {
     auctionShock: 0,
     spilloverShock: 0,
     noiseState: 0,
+    buybackAdj: 0,
+    anticipation: 0,
     boughtBack: 0,
   };
 }

@@ -89,7 +89,7 @@ describe("Phase 5 — on/off-the-run liquidity premium", () => {
   });
 
   it("switching liquidity noise off leaves bonds exactly on their deterministic spreads", () => {
-    const quiet = simulate(makeConfig({ run: { horizonYears: 1, recordEveryDays: 10 }, liquidity: { noiseBp: 0 } }), 3);
+    const quiet = simulate(makeConfig({ run: { horizonYears: 1, recordEveryDays: 10 }, liquidity: { noiseBp: 0 }, buyback: { enabled: false } }), 3);
     const st = quiet.records.status.view();
     const sp = quiet.records.spread.view();
     for (let i = 0; i < quiet.records.length; i++) {

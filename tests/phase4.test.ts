@@ -55,6 +55,7 @@ describe("Phase 4 — auction mechanics", () => {
     const cfg = makeConfig({
       run: { horizonYears: 1, recordEveryDays: 1 },
       liquidity: { baseRichnessBp: { 2: 0, 3: 0, 5: 0, 7: 0, 10: 0, 20: 0, 30: 0 }, noiseBp: 0, agingCheapnessBpPerYear: 0 },
+      buyback: { enabled: false },
     });
     const r = simulate(cfg, 7);
     const a = r.auctions.find((x) => x.tenor === 10 && !x.isReopen && Math.abs(x.tailBp) > 1.0)!;

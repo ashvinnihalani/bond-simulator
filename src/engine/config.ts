@@ -141,7 +141,7 @@ export interface BuybackConfig {
   buckets: BuybackBucket[];
   /** Per-CUSIP cap as a share of outstanding. */
   perCusipCap: number;
-  /** Treasury will not pay above this spread rich to the curve (bp; negative = must be cheap). */
+  /** Minimum acceptable offer spread to the curve (bp). Offers richer than this are rejected; negative = Treasury will pay up to that much rich. */
   reservationSpreadBp: number;
   /** Dealer offer propensity: base probability an eligible CUSIP is offered. */
   offerBaseProb: number;
@@ -152,8 +152,10 @@ export interface BuybackConfig {
   offerSizeSigma: number;
   /** Dealer markup over current spread on offers (bp). */
   offerMarkupBp: number;
-  /** Fraction of the accepted CUSIP's spread that is compressed toward zero. */
+  /** Fraction of the accepted CUSIP's cheapness that is compressed toward zero. */
   spreadCompression: number;
+  /** Daily decay of the compression effect (1 = permanent). */
+  compressionDecay: number;
   /** Spillover richening to other bonds in the bucket (bp per $bn bought) and daily decay. */
   spilloverBpPerBn: number;
   spilloverDecay: number;
@@ -294,13 +296,14 @@ export const DEFAULT_CONFIG: SimConfig = {
       { name: "20-30y", lo: 20, hi: 30, maxPerOp: 2, opsPerQuarter: 1 },
     ],
     perCusipCap: 0.1,
-    reservationSpreadBp: 0.5,
-    offerBaseProb: 0.15,
-    offerCheapnessSlope: 0.08,
-    offerSizeFraction: 0.02,
+    reservationSpreadBp: -1.0,
+    offerBaseProb: 0.08,
+    offerCheapnessSlope: 0.06,
+    offerSizeFraction: 0.012,
     offerSizeSigma: 0.6,
     offerMarkupBp: 0.5,
     spreadCompression: 0.5,
+    compressionDecay: 0.995,
     spilloverBpPerBn: 0.15,
     spilloverDecay: 0.9,
     anticipationFraction: 0.3,
